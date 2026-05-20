@@ -752,10 +752,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                     "eid": eid,
                     "stage": str(stage_name).lower(),
                     "shader_id": shader_str,
-                    "shader": {
-                        "name": self._shader_name(refl, shader_str),
-                        "entry": entry,
-                    },
+                    "shader": self._shader_info(refl, shader, entry),
                     "bind": bind,
                     "bindings": self._collect_shader_bindings(pipe, stage_enum, refl),
                     "cbufs": cbufs,
@@ -951,11 +948,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                     "eid": eid,
                     "stage": stage_name,
                     "api": str(self.ctx.APIProps().pipelineType),
-                    "shader": {
-                        "sid": shader_str,
-                        "name": self._shader_name(refl, shader_str),
-                        "entry": str(entry),
-                    },
+                    "shader": self._shader_info(refl, shader, str(entry)),
                     "source_encoding": self._shader_encoding_name(source_encoding),
                     "replacement_shader": str(new_shader),
                     "errors": str(errors or ""),
@@ -1162,11 +1155,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                 "data": {
                     "eid": eid,
                     "stage": stage_name,
-                    "shader": {
-                        "sid": shader_str,
-                        "entry": pipe.GetShaderEntryPoint(stage_enum),
-                        "name": self._shader_name(refl, shader_str),
-                    },
+                    "shader": self._shader_info(refl, shader, pipe.GetShaderEntryPoint(stage_enum)),
                     "encoding": self._enum_tail(getattr(refl, "encoding", None)),
                     "dest": dest,
                     "byte_count": len(raw),
@@ -1273,10 +1262,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                 "data": {
                     "eid": eid,
                     "stage": stage_name,
-                    "shader": {
-                        "name": self._shader_name(refl, shader_str),
-                        "entry": entry,
-                    },
+                    "shader": self._shader_info(refl, shader, entry),
                     "debug": debug_summary,
                     "files": [
                         {
@@ -1465,11 +1451,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                 "data": {
                     "eid": eid,
                     "stage": stage_name,
-                    "shader": {
-                        "name": self._shader_name(refl, shader_str),
-                        "entry": entry,
-                        "sid": shader_str,
-                    },
+                    "shader": self._shader_info(refl, shader, entry),
                     "cbufs": cbufs,
                 },
                 "err": None,
@@ -1553,10 +1535,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                             "eid": eid,
                             "stage": stage_name,
                             "kind": "source",
-                            "shader": {
-                                "name": self._shader_name(refl, shader_str),
-                                "entry": entry,
-                            },
+                            "shader": self._shader_info(refl, shader, entry),
                             "debug": debug_summary,
                             "files": [
                                 {
@@ -1596,10 +1575,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                     "eid": eid,
                     "stage": stage_name,
                     "kind": "disasm",
-                    "shader": {
-                        "name": self._shader_name(refl, shader_str),
-                        "entry": entry,
-                    },
+                    "shader": self._shader_info(refl, shader, entry),
                     "debug": debug_summary,
                     "target": disasm.get("target"),
                     "code": code,
@@ -1684,10 +1660,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                 "data": {
                     "eid": eid,
                     "stage": stage_name,
-                    "shader": {
-                        "name": self._shader_name(refl, shader_str),
-                        "entry": entry,
-                    },
+                    "shader": self._shader_info(refl, shader, entry),
                     "target": disasm.get("target"),
                     "line_count": line_count,
                     "offset": offset,

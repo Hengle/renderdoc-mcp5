@@ -27,17 +27,56 @@ class ShaderSupportMixin:
             ("CS", rd.ShaderStage.Compute),
         ]
 
+    def _resource_display_name(self, rid):
+        try:
+            if rid is None:
+                return None
+            text = self.ctx.GetResourceNameUnsuffixed(rid)
+            if text:
+                return str(text)
+        except Exception:
+            pass
+        try:
+            if rid is None:
+                return None
+            text = self.ctx.GetResourceName(rid)
+            if text:
+                return str(text)
+        except Exception:
+            pass
+        return None
+
     @staticmethod
-    def _shader_name(reflection, fallback):
+    def _shader_source_name(reflection):
         try:
             if reflection:
                 if reflection.debugInfo.entrySourceName:
-                    return reflection.debugInfo.entrySourceName
+                    return str(reflection.debugInfo.entrySourceName)
                 if reflection.entryPoint:
-                    return reflection.entryPoint
+                    return str(reflection.entryPoint)
         except Exception:
             pass
-        return fallback
+        return None
+
+    def _shader_name(self, reflection, fallback, shader_id=None):
+        return self._resource_display_name(shader_id) or self._shader_source_name(reflection) or fallback
+
+    def _shader_info(self, reflection, shader_id, entry=None):
+        sid = str(shader_id)
+        resource_name = self._resource_display_name(shader_id)
+        source_name = self._shader_source_name(reflection)
+
+        info = {
+            "sid": sid,
+            "name": resource_name or source_name or sid,
+        }
+        if resource_name:
+            info["resource_name"] = resource_name
+        if source_name:
+            info["source_name"] = source_name
+        if entry is not None:
+            info["entry"] = entry
+        return info
 
     @staticmethod
     def _safe_len(fn):
@@ -174,10 +213,7 @@ class PipelineStateServiceMixin(ShaderSupportMixin):
                     if shader_str and "Null" not in shader_str and shader_str != "ResourceId::0":
                         entry = pipe.GetShaderEntryPoint(stage_enum)
                         refl = pipe.GetShaderReflection(stage_enum)
-                        result["sh"][short] = {
-                            "name": self._shader_name(refl, shader_str),
-                            "entry": entry,
-                        }
+                        result["sh"][short] = self._shader_info(refl, shader, entry)
 
                         try:
                             result["res"]["srv"] += len(pipe.GetReadOnlyResources(stage_enum, False))
