@@ -1,21 +1,23 @@
 ---
 name: renderdoc-analysis
-description: Analyze RenderDoc observe-layer evidence from renderdoc-mcp. Use for action reverse engineering, pass classification, resource-flow tracing, shader/material usage, frame reports, and pipeline reconstruction.
+description: Analyze RenderDoc evidence from renderdoc-mcp. Use for action reverse engineering, pass classification, resource-flow tracing, shader/material usage, frame reports, pipeline reconstruction, and controlled shader edit experiments.
 ---
 
 # RenderDoc Analysis
 
 Use this skill only after collecting facts from `renderdoc-mcp`.
 Working boundary:
-- MCP is the observe layer.
+- MCP is primarily the observe layer.
 - This skill is the analysis layer.
+- Shader edit tools are controlled replay experiments for testing a specific hypothesis; do not use them as a substitute for shader, binding, IO, and resource-flow evidence.
 - Name packet fields or inspect outputs when you cite evidence.
 - Treat script outputs as evidence helpers, not final authority.
 - If evidence is insufficient, stop at a broader family.
 - If multiple qrenderdoc windows may be open, call `list_live_windows` first and pass `window_id` to every live MCP tool. For bundled scripts, set `RENDERDOC_MCP_WINDOW_ID`.
 - When you finish using a qrenderdoc window or capture for the current task, close that opened content/window instead of leaving extra RenderDoc windows around.
+- If a qrenderdoc window was already open before installing or updating the bridge extension, restart it; extension methods are not hot-reloaded.
 
-Task routes: `analyze-pass`, `trace-resource-flow`, `analyze-material-usage`, `reverse-action`, `build-frame-report`, `reverse-render-pipeline`
+Task routes: `analyze-pass`, `trace-resource-flow`, `analyze-material-usage`, `reverse-action`, `shader-edit-experiment`, `build-frame-report`, `reverse-render-pipeline`
 
 Read only the references you need:
 - routing: `references/tool-map.md`
@@ -27,6 +29,7 @@ Read only the references you need:
 - report format: `references/report-format.md`
 - shader motifs: `references/shader-patterns.md`
 - shader decompiler install/use: `references/decompiler.md`
+- shader edit experiments: `references/workflows.md`, `references/tool-map.md`, `references/decompiler.md`
 
 Script rule:
 - Always read `*_summary.json` first.
@@ -143,6 +146,28 @@ Reverse-action acceptance bar:
 - describe `o#` or UAV outputs with channel-level evidence when available
 - keep pass-family guesses secondary to shader/resource facts
 - do not use `BLENDWEIGHTS/BLENDINDICES` as semantic proof beyond mesh-format context
+
+## shader-edit-experiment
+
+Use only when the user asks to test a shader modification, or when a specific shader/output hypothesis remains disputed after normal observation.
+
+Default path:
+
+1. Select the live target with `list_live_windows` when needed, and pass `window_id` to every live tool call.
+2. Inspect the target action first with `get_draw_packet` and `inspect_shader`; identify `eid`, `stage`, current shader RID, entry point, likely compile profile, and output RT/UAV.
+3. Export or reuse the decompiled HLSL in the action working directory. Keep edits minimal and close to the Ruri output.
+4. Save a baseline output image with `save_event_output_texture` before applying any edit.
+5. Call `get_target_shader_encodings` and require `HLSL` support before compiling HLSL.
+6. Apply the edit with `apply_shader_edit(eid, stage, source_path|source, source_encoding="hlsl", entry, profile)`. Use the same entry/profile observed from the shader, for example `main` and `ps_5_0` for many D3D11 pixel shaders.
+7. Save the edited output image, then compare it with the baseline visually or by hash/pixel statistics.
+8. Always call `revert_shader_edit(eid, stage)` before finishing the experiment. If multiple edits are applied to the same shader, the latest MCP-created replacement is the one reverted.
+9. Report the baseline artifact, edited artifact, exact HLSL file or edit, replacement result, and whether the image difference supports the hypothesis.
+
+Shader edit guardrails:
+- Do not leave a replay replacement active after the task.
+- Do not infer semantic meaning from a diagnostic color alone; tie it back to code ranges, bindings, IO, and resource flow.
+- Prefer simple output probes such as writing one intermediate value to `SV_Target` over broad rewrites.
+- If `apply_shader_edit` is unavailable in an existing qrenderdoc window, restart qrenderdoc after reinstalling the extension.
 
 ## build-frame-report
 

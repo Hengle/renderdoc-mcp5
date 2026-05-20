@@ -50,6 +50,30 @@ After restart, open a capture and use RenderDoc's shader edit/decompile menu. Ch
 
 Use decompiled HLSL as supporting evidence. Keep `inspect_shader`, `get_shader_disasm`, bindings, IO, and resource usage as the primary evidence path for reports.
 
+## Use For MCP Shader Edit
+
+Ruri HLSL can be used as the input artifact for `apply_shader_edit` when the live replay reports `HLSL` from `get_target_shader_encodings`.
+
+Before editing:
+
+- inspect the target action/stage and record the entry point and profile
+- save the original output with `save_event_output_texture`
+- keep the edited HLSL structurally close to the decompiler output
+
+Apply with the observed entry/profile, for example:
+
+```text
+apply_shader_edit(eid=<eid>, stage="ps", source_path="<edited.hlsl>", source_encoding="hlsl", entry="main", profile="ps_5_0")
+```
+
+After editing:
+
+- save the edited output
+- compare it with the baseline
+- call `revert_shader_edit(eid=<eid>, stage="<stage>")` before finishing
+
+If an already-open qrenderdoc window does not expose `apply_shader_edit`, reinstall the extension if needed and restart qrenderdoc.
+
 ## Reverse-Action Export Rule
 
 For `reverse-action`, export the inspected action shader stages to HLSL before writing the report:

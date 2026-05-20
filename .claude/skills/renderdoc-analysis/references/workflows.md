@@ -13,6 +13,7 @@
 3. Pass `window_id` on all live MCP calls for that task.
 4. For bundled scripts, set `RENDERDOC_MCP_WINDOW_ID` before running the script.
 5. Treat a multiple-window error as a target-selection problem, not as evidence failure.
+6. Restart qrenderdoc after bridge extension install/update; existing windows do not hot-load new Python methods.
 
 ## Pass Analysis
 
@@ -61,6 +62,29 @@
 14. Use `io.in_tex_meta`, `io.out_rt_meta`, `io.out_uav_meta`, and `io.out_next_meta` to judge truncation or partial downstream coverage. Do not treat `inspect_shader.bind.srv` and `io.in_tex` as directly comparable counts.
 15. Use overlay or before/after RT validation only when visible contribution is disputed; shader code and output writes remain primary evidence.
 16. Write the answer with `report-format.md` and consult `shader-patterns.md` for motif recognition.
+
+## Shader Edit Experiment
+
+Use this workflow only to test a specific shader/output hypothesis.
+
+1. Select the live qrenderdoc window with `list_live_windows` when needed.
+2. Identify the target action and stage with `get_draw_packet` and `inspect_shader`.
+3. Record the current shader RID, entry point, compile profile, relevant output RT/UAV, and the exact HLSL artifact being edited.
+4. Save the baseline output with `save_event_output_texture`.
+5. Call `get_target_shader_encodings`; for Ruri output, require `HLSL`.
+6. Make the smallest useful HLSL edit. Prefer writing one intermediate value or diagnostic color to `SV_Target`/the relevant output over rewriting the shader.
+7. Call `apply_shader_edit` with `eid`, `stage`, `source_path` or `source`, `source_encoding="hlsl"`, `entry`, and `profile`.
+8. If compilation fails, report the compiler errors and stop without claiming visual evidence.
+9. If compilation succeeds, save the edited output with `save_event_output_texture` and compare it with the baseline by visual inspection, hash, or pixel statistics.
+10. Call `revert_shader_edit(eid, stage)` before finishing.
+11. Report the exact edit, baseline artifact, edited artifact, replacement result, comparison result, and any remaining uncertainty.
+
+Guardrails:
+
+- Treat shader edit results as experimental evidence that supports or rejects one hypothesis.
+- Keep normal shader analysis, bindings, IO, and resource-flow evidence as the basis for semantic claims.
+- Do not leave the replacement active in the replay session.
+- If repeated edits target the same shader, revert at the end; the bridge tracks the latest MCP-created replacement.
 
 ## Frame Report
 

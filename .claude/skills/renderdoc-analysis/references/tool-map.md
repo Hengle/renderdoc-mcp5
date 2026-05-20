@@ -1,6 +1,6 @@
 # Tool Map
 
-Use this file to choose the minimum observe-tool set for each analysis task.
+Use this file to choose the minimum tool set for each analysis task.
 
 ## Live Target Setup
 
@@ -10,6 +10,22 @@ When a task uses live qrenderdoc data:
 - pick the `window_id` whose `capture_path` matches the target capture
 - pass that `window_id` to every live MCP tool call
 - for bundled scripts, set `RENDERDOC_MCP_WINDOW_ID=<window_id>`
+- if qrenderdoc was already open before bridge extension install/update, restart it; Python extension methods are not hot-reloaded
+
+## Shader Edit Tools
+
+Use these only for controlled replay experiments after the target shader/output is already identified:
+
+- `get_target_shader_encodings`: check whether the live replay supports compiling `HLSL`, `DXBC`, or other target encodings.
+- `apply_shader_edit`: compile edited source or bytecode and replace the current shader resource for a target `eid` and `stage`.
+- `revert_shader_edit`: remove the MCP-managed replacement and free the temporary target shader resource.
+
+Good stopping point:
+
+- a baseline output artifact was saved before the edit
+- the edited output artifact was saved after the edit
+- the replacement was reverted before finishing
+- the image difference is tied back to shader code, bindings, IO, or resource-flow evidence
 
 ## `analyze-pass`
 
@@ -87,6 +103,29 @@ Good stopping point:
 - you can explain the main shader code ranges and what each range does
 - you can describe `o#` or UAV outputs with evidence tied to code or downstream consumers
 - you can separate hard evidence from inferred material or effect role
+
+## `shader-edit-experiment`
+
+Start with:
+
+- `get_draw_packet`
+- `inspect_shader` for the target stage
+- `save_event_output_texture` for the baseline output
+- `get_target_shader_encodings`
+
+Add for the experiment:
+
+- Ruri HLSL export or an existing HLSL file close to the inspected shader
+- `apply_shader_edit` with `eid`, `stage`, `source_path` or `source`, `source_encoding="hlsl"`, and the observed `entry`/`profile`
+- `save_event_output_texture` for the edited output
+- `revert_shader_edit` before finalizing
+
+Good stopping point:
+
+- compile succeeded or the compile errors are reported
+- baseline and edited artifacts are named
+- the shader replacement is reverted
+- the conclusion is framed as experimental evidence, not standalone semantic proof
 
 ## `build-frame-report`
 
