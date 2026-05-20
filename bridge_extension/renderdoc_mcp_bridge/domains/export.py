@@ -96,20 +96,6 @@ class ExportServiceMixin:
     def debug_save_texture(self, params):
         rid = params.get("rid")
         eid = params.get("eid")
-        dest_value = params.get("dest")
-        dest_format = params.get("format") or params.get("type")
-        dest_path = params.get("path") or params.get("output")
-        if dest_value is not None:
-            dest_text = str(dest_value)
-            if dest_text.upper() in ("PNG", "HDR", "DDS") and dest_format is None and dest_path is None:
-                dest_format = dest_text
-            elif dest_path is None:
-                dest_path = dest_text
-        if dest_format is None and dest_path is not None:
-            suffix = os.path.splitext(str(dest_path))[1].lower().lstrip(".")
-            if suffix in ("png", "hdr", "dds"):
-                dest_format = suffix
-        dest = str(dest_format or "PNG").upper()
         if rid is None:
             return {
                 "ok": False,
@@ -119,48 +105,87 @@ class ExportServiceMixin:
                 "meta": {"cap": "active", "truncated": False},
             }
 
-        result = {"path": None, "error": None, "format": dest, "requested_dest": dest_path}
+        dest, dest_path = self._resolve_texture_dest(params)
+        result = {
+            "path": None,
+            "error": None,
+            "format": dest,
+            "requested_dest": dest_path,
+            "rid": str(rid),
+        }
 
         def collect(controller):
             if eid is not None:
                 controller.SetFrameEvent(int(eid), True)
+            saved = self._save_texture_resource(
+                controller,
+                rid,
+                dest,
+                dest_path,
+                eid,
+                bool(params.get("overwrite")),
+                prefix="texture",
+            )
+            result.update(saved)
 
-            save = rd.TextureSave()
-            resolved = None
-            for tex in controller.GetTextures():
-                if str(tex.resourceId) == str(rid):
-                    resolved = tex.resourceId
-                    break
-            if resolved is None:
-                result["error"] = "Texture resource not found in current capture"
+        self.ctx.Replay().BlockInvoke(collect)
+
+        return {
+            "ok": result["path"] is not None,
+            "mode": "summary",
+            "data": result,
+            "err": None if result["path"] else {"code": "save_failed", "msg": result["error"]},
+            "meta": {"cap": "active", "truncated": False},
+        }
+
+    def save_event_output_texture(self, params):
+        eid = params.get("eid")
+        if eid is None:
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "missing_args", "msg": "eid is required"},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        output_index = max(0, int(params.get("output_index", 0) or 0))
+        include_depth = bool(params.get("depth"))
+        dest, dest_path = self._resolve_texture_dest(params)
+        result = {
+            "path": None,
+            "error": None,
+            "format": dest,
+            "requested_dest": dest_path,
+            "eid": int(eid),
+            "output_index": output_index,
+            "depth": include_depth,
+            "rid": None,
+            "name": None,
+        }
+
+        def collect(controller):
+            resolved_rid = self._resolve_event_output_rid(controller, int(eid), output_index, include_depth)
+            if resolved_rid is None:
+                result["error"] = "Requested event output target was not found"
                 return
-            save.resourceId = resolved
-            ext = "png"
-            if dest == "HDR":
-                save.destType = rd.FileType.HDR
-                ext = "hdr"
-            elif dest == "DDS":
-                save.destType = rd.FileType.DDS
-                ext = "dds"
-                save.mip = -1
-                save.slice.sliceIndex = -1
-            else:
-                save.destType = rd.FileType.PNG
-            save.alpha = rd.AlphaMapping.Preserve
-            if dest != "DDS":
-                save.mip = 0
-                save.slice.sliceIndex = 0
+
+            result["rid"] = str(resolved_rid)
             try:
-                out_path = self._resolve_export_path(dest_path, "texture", rid, eid, ext, bool(params.get("overwrite")))
+                result["name"] = self.ctx.GetResourceName(resolved_rid)
             except Exception as exc:
-                result["error"] = str(exc)
-                return
-            try:
-                res = controller.SaveTexture(save, out_path)
-                result["path"] = out_path if os.path.exists(out_path) else None
-                result["error"] = None if result["path"] else str(res)
-            except Exception as exc:
-                result["error"] = str(exc)
+                self._warn_swallow("export.save_event_output_texture.resource_name", exc)
+
+            saved = self._save_texture_resource(
+                controller,
+                resolved_rid,
+                dest,
+                dest_path,
+                int(eid),
+                bool(params.get("overwrite")),
+                prefix="event_output",
+            )
+            result.update(saved)
 
         self.ctx.Replay().BlockInvoke(collect)
 
@@ -342,3 +367,109 @@ class ExportServiceMixin:
             if not os.path.exists(candidate):
                 return candidate
         raise RuntimeError("Could not find a non-conflicting export path for {}".format(out_path))
+
+    @staticmethod
+    def _resolve_texture_dest(params):
+        dest_value = params.get("dest")
+        dest_format = params.get("format") or params.get("type")
+        dest_path = params.get("path") or params.get("output")
+        if dest_value is not None:
+            dest_text = str(dest_value)
+            if dest_text.upper() in ("PNG", "HDR", "DDS") and dest_format is None and dest_path is None:
+                dest_format = dest_text
+            elif dest_path is None:
+                dest_path = dest_text
+        if dest_format is None and dest_path is not None:
+            suffix = os.path.splitext(str(dest_path))[1].lower().lstrip(".")
+            if suffix in ("png", "hdr", "dds"):
+                dest_format = suffix
+        return str(dest_format or "PNG").upper(), dest_path
+
+    @staticmethod
+    def _valid_resource_id(rid):
+        rid_str = str(rid)
+        return bool(rid_str) and "Null" not in rid_str and rid_str != "ResourceId::0"
+
+    def _resolve_event_output_rid(self, controller, eid, output_index, include_depth):
+        action = self.ctx.GetAction(int(eid))
+        if action is not None:
+            if include_depth:
+                rid = getattr(action, "depthOut", None)
+                if self._valid_resource_id(rid):
+                    return rid
+            else:
+                try:
+                    outputs = list(getattr(action, "outputs", []) or [])
+                except Exception:
+                    outputs = []
+                if 0 <= output_index < len(outputs):
+                    rid = outputs[output_index]
+                    if self._valid_resource_id(rid):
+                        return rid
+
+        controller.SetFrameEvent(int(eid), True)
+        pipe = controller.GetPipelineState()
+
+        if include_depth:
+            try:
+                depth_target = pipe.GetDepthTarget()
+                rid = getattr(depth_target, "resource", None)
+                if self._valid_resource_id(rid):
+                    return rid
+            except Exception as exc:
+                self._warn_swallow("export.resolve_event_output_rid.depth_target", exc)
+            return None
+
+        try:
+            outputs = list(pipe.GetOutputTargets() or [])
+        except Exception as exc:
+            self._warn_swallow("export.resolve_event_output_rid.output_targets", exc)
+            outputs = []
+        if 0 <= output_index < len(outputs):
+            rid = getattr(outputs[output_index], "resource", None)
+            if self._valid_resource_id(rid):
+                return rid
+        return None
+
+    def _save_texture_resource(self, controller, rid, dest, dest_path, eid, overwrite, prefix):
+        result = {"path": None, "error": None}
+        save = rd.TextureSave()
+        resolved = None
+        for tex in controller.GetTextures():
+            if str(tex.resourceId) == str(rid):
+                resolved = tex.resourceId
+                break
+        if resolved is None:
+            result["error"] = "Texture resource not found in current capture"
+            return result
+
+        save.resourceId = resolved
+        ext = "png"
+        if dest == "HDR":
+            save.destType = rd.FileType.HDR
+            ext = "hdr"
+        elif dest == "DDS":
+            save.destType = rd.FileType.DDS
+            ext = "dds"
+            save.mip = -1
+            save.slice.sliceIndex = -1
+        else:
+            save.destType = rd.FileType.PNG
+        save.alpha = rd.AlphaMapping.Preserve
+        if dest != "DDS":
+            save.mip = 0
+            save.slice.sliceIndex = 0
+
+        try:
+            out_path = self._resolve_export_path(dest_path, prefix, rid, eid, ext, overwrite)
+        except Exception as exc:
+            result["error"] = str(exc)
+            return result
+
+        try:
+            save_result = controller.SaveTexture(save, out_path)
+            result["path"] = out_path if os.path.exists(out_path) else None
+            result["error"] = None if result["path"] else str(save_result)
+        except Exception as exc:
+            result["error"] = str(exc)
+        return result

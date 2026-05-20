@@ -97,6 +97,11 @@ LIVE_BRIDGE_TOOLS: tuple[ToolSpec, ...] = (
         "Return a compact shader summary for one stage at one event from the live capture.",
     ),
     ToolSpec(
+        "save_event_output_texture",
+        True,
+        "Save one live event output render target or depth target to an export file for before/after validation.",
+    ),
+    ToolSpec(
         "inspect_cbuffer_values",
         True,
         "Return cbuffer binding ranges and actual variable values for one stage/event.",

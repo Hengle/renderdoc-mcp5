@@ -159,6 +159,7 @@ class LiveToolRegistry:
             "get_draw_packet": self._get_draw_packet,
             "debug_save_overlay": self._debug_save_overlay,
             "debug_save_texture": self._debug_save_texture,
+            "save_event_output_texture": self._save_event_output_texture,
             "inspect_pipeline_state": self._inspect_pipeline_state,
             "inspect_shader": self._inspect_shader,
             "inspect_cbuffer_values": self._inspect_cbuffer_values,
@@ -382,6 +383,10 @@ class LiveToolRegistry:
     def _debug_save_texture(self, params: dict[str, Any]) -> Any:
         clean_params, window_id = self._split_window_params(params)
         return self.client.call("debug_save_texture", clean_params, window_id=window_id)
+
+    def _save_event_output_texture(self, params: dict[str, Any]) -> Any:
+        clean_params, window_id = self._split_window_params(params)
+        return self.client.call("save_event_output_texture", clean_params, window_id=window_id)
 
     def _list_live_windows(self, _: dict[str, Any]) -> Any:
         return self.client.list_windows()
@@ -673,6 +678,31 @@ def maybe_create_fastmcp() -> Any | None:
                 "eid": eid,
                 "dest": dest,
                 "format": format,
+                "overwrite": overwrite,
+                "window_id": window_id,
+            },
+        )
+
+    @app.tool(description=descriptions["save_event_output_texture"])
+    def save_event_output_texture(
+        eid: int,
+        output_index: int = 0,
+        depth: bool = False,
+        dest: str = "PNG",
+        format: str | None = None,
+        path: str | None = None,
+        overwrite: bool = False,
+        window_id: str | None = None,
+    ) -> Any:
+        return live.require(
+            "save_event_output_texture",
+            {
+                "eid": eid,
+                "output_index": output_index,
+                "depth": depth,
+                "dest": dest,
+                "format": format,
+                "path": path,
                 "overwrite": overwrite,
                 "window_id": window_id,
             },

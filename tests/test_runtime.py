@@ -40,3 +40,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("inspect_cbuffer_values", registry.handlers)
         self.assertIn("read_buffer", registry.handlers)
         self.assertIn("list_live_windows", registry.handlers)
+
+    def test_live_registry_exposes_event_output_export_tool(self):
+        registry = runtime.LiveToolRegistry(client=object())
+
+        self.assertIn("save_event_output_texture", registry.handlers)

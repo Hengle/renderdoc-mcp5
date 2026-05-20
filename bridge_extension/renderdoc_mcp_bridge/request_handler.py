@@ -24,6 +24,7 @@ class RequestHandler:
             "debug_resource_ctx": observe_service.debug_resource_ctx,
             "debug_resource_info": observe_service.debug_resource_info,
             "debug_save_texture": observe_service.debug_save_texture,
+            "save_event_output_texture": observe_service.save_event_output_texture,
             "debug_save_overlay": observe_service.debug_save_overlay,
             "inspect_pipeline_state": observe_service.inspect_pipeline_state,
             "inspect_shader": observe_service.inspect_shader,

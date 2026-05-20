@@ -1,8 +1,5 @@
 """Shader inspection services."""
 
-import hashlib
-import os
-
 import renderdoc as rd
 
 from .pipeline import ShaderSupportMixin
@@ -618,6 +615,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
                 "data": {
                     "eid": eid,
                     "stage": str(stage_name).lower(),
+                    "shader_id": shader_str,
                     "shader": {
                         "name": self._shader_name(refl, shader_str),
                         "entry": entry,
