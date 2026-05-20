@@ -1,5 +1,8 @@
 """Shader inspection services."""
 
+import hashlib
+import os
+
 import renderdoc as rd
 
 from .pipeline import ShaderSupportMixin
