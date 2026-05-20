@@ -162,6 +162,9 @@ class LiveToolRegistry:
             "save_event_output_texture": self._save_event_output_texture,
             "inspect_pipeline_state": self._inspect_pipeline_state,
             "inspect_shader": self._inspect_shader,
+            "get_target_shader_encodings": self._get_target_shader_encodings,
+            "apply_shader_edit": self._apply_shader_edit,
+            "revert_shader_edit": self._revert_shader_edit,
             "inspect_cbuffer_values": self._inspect_cbuffer_values,
             "read_buffer": self._read_buffer,
             "get_shader_disasm": self._get_shader_disasm,
@@ -278,6 +281,18 @@ class LiveToolRegistry:
     def _inspect_shader(self, params: dict[str, Any]) -> Any:
         clean_params, window_id = self._split_window_params(params)
         return self.client.call("inspect_shader", clean_params, window_id=window_id)
+
+    def _get_target_shader_encodings(self, params: dict[str, Any]) -> Any:
+        clean_params, window_id = self._split_window_params(params)
+        return self.client.call("get_target_shader_encodings", clean_params, window_id=window_id)
+
+    def _apply_shader_edit(self, params: dict[str, Any]) -> Any:
+        clean_params, window_id = self._split_window_params(params)
+        return self.client.call("apply_shader_edit", clean_params, window_id=window_id)
+
+    def _revert_shader_edit(self, params: dict[str, Any]) -> Any:
+        clean_params, window_id = self._split_window_params(params)
+        return self.client.call("revert_shader_edit", clean_params, window_id=window_id)
 
     def _inspect_cbuffer_values(self, params: dict[str, Any]) -> Any:
         clean_params, window_id = self._split_window_params(params)
@@ -719,6 +734,63 @@ def maybe_create_fastmcp() -> Any | None:
             {
                 "eid": eid,
                 "stage": stage,
+                "window_id": window_id,
+            },
+        )
+
+    @app.tool(description=descriptions["get_target_shader_encodings"])
+    def get_target_shader_encodings(
+        window_id: str | None = None,
+    ) -> Any:
+        return live.require(
+            "get_target_shader_encodings",
+            {
+                "window_id": window_id,
+            },
+        )
+
+    @app.tool(description=descriptions["apply_shader_edit"])
+    def apply_shader_edit(
+        eid: int,
+        stage: str,
+        source: str | None = None,
+        source_path: str | None = None,
+        source_encoding: str = "hlsl",
+        entry: str | None = None,
+        profile: str | None = None,
+        compile_cmdline: str | None = None,
+        fresh_flags: bool = False,
+        window_id: str | None = None,
+    ) -> Any:
+        return live.require(
+            "apply_shader_edit",
+            {
+                "eid": eid,
+                "stage": stage,
+                "source": source,
+                "source_path": source_path,
+                "source_encoding": source_encoding,
+                "entry": entry,
+                "profile": profile,
+                "compile_cmdline": compile_cmdline,
+                "fresh_flags": fresh_flags,
+                "window_id": window_id,
+            },
+        )
+
+    @app.tool(description=descriptions["revert_shader_edit"])
+    def revert_shader_edit(
+        eid: int | None = None,
+        stage: str | None = None,
+        shader_id: str | None = None,
+        window_id: str | None = None,
+    ) -> Any:
+        return live.require(
+            "revert_shader_edit",
+            {
+                "eid": eid,
+                "stage": stage,
+                "shader_id": shader_id,
                 "window_id": window_id,
             },
         )

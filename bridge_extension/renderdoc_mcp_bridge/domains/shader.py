@@ -9,6 +9,12 @@ from .pipeline import ShaderSupportMixin
 
 
 class ShaderServiceMixin(ShaderSupportMixin):
+    def _shader_replacement_maps(self):
+        if not hasattr(self, "_shader_replacements"):
+            self._shader_replacements = {}
+            self._replacement_to_original = {}
+        return self._shader_replacements, self._replacement_to_original
+
     @staticmethod
     def _safe_int(value):
         try:
@@ -60,6 +66,133 @@ class ShaderServiceMixin(ShaderSupportMixin):
             return text.split(".")[-1] if text else text
         except Exception:
             return None
+
+    @staticmethod
+    def _shader_encoding_name(value):
+        names = {
+            0: "Unknown",
+            1: "DXBC",
+            2: "GLSL",
+            3: "SPIRV",
+            4: "SPIRVAsm",
+            5: "HLSL",
+            6: "DXIL",
+            7: "OpenGLSPIRV",
+            8: "OpenGLSPIRVAsm",
+            9: "Slang",
+        }
+        try:
+            return names.get(int(value), str(value).split(".")[-1])
+        except Exception:
+            text = str(value)
+            return text.split(".")[-1] if text else text
+
+    @staticmethod
+    def _shader_encoding_from_name(value):
+        if value is None:
+            return None
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        normalised = text.lower().replace("-", "").replace("_", "")
+        mapping = {
+            "hlsl": "HLSL",
+            "dxbc": "DXBC",
+            "dxil": "DXIL",
+            "glsl": "GLSL",
+            "spirv": "SPIRV",
+            "spv": "SPIRV",
+            "slang": "Slang",
+        }
+        attr = mapping.get(normalised, text)
+        try:
+            return getattr(rd.ShaderEncoding, attr)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _append_compile_flag(flags, name, value):
+        flag = rd.ShaderCompileFlag()
+        flag.name = str(name)
+        flag.value = str(value)
+        flags.flags.append(flag)
+
+    def _copy_compile_flags(self, source_flags):
+        flags = rd.ShaderCompileFlags()
+        try:
+            for source_flag in getattr(source_flags, "flags", []) or []:
+                self._append_compile_flag(
+                    flags,
+                    getattr(source_flag, "name", ""),
+                    getattr(source_flag, "value", ""),
+                )
+        except Exception as exc:
+            self._warn_swallow("shader.copy_compile_flags", exc)
+        return flags
+
+    def _compile_flags_for_edit(self, params, reflection):
+        base_flags = None
+        if not bool(params.get("fresh_flags")) and reflection is not None:
+            try:
+                base_flags = getattr(getattr(reflection, "debugInfo", None), "compileFlags", None)
+            except Exception as exc:
+                self._warn_swallow("shader.compile_flags.debug_info", exc)
+
+        flags = self._copy_compile_flags(base_flags) if base_flags is not None else rd.ShaderCompileFlags()
+
+        for item in params.get("flags", []) or []:
+            if isinstance(item, dict):
+                name = item.get("name")
+                value = item.get("value", "")
+                if name:
+                    self._append_compile_flag(flags, name, value)
+
+        cmdline = params.get("compile_cmdline")
+        if cmdline is None:
+            cmdline = params.get("cmdline")
+        profile = params.get("profile")
+        if profile and (cmdline is None or "/T" not in str(cmdline)):
+            cmdline = ("/T {}".format(profile) if cmdline is None else "/T {} {}".format(profile, cmdline))
+
+        if cmdline is not None:
+            replaced = False
+            try:
+                for flag in flags.flags:
+                    if str(getattr(flag, "name", "")) == "@cmdline":
+                        flag.value = str(cmdline)
+                        replaced = True
+                        break
+            except Exception as exc:
+                self._warn_swallow("shader.compile_flags.replace_cmdline", exc)
+            if not replaced:
+                self._append_compile_flag(flags, "@cmdline", cmdline)
+
+        return flags
+
+    @staticmethod
+    def _read_shader_source_from_params(params):
+        if params.get("source") is not None:
+            return str(params.get("source")), None
+
+        source_path = params.get("source_path") or params.get("path")
+        if not source_path:
+            return None, "source or source_path is required"
+
+        source_path = os.path.abspath(str(source_path))
+        try:
+            with open(source_path, "r", encoding="utf-8-sig") as handle:
+                return handle.read(), None
+        except Exception as exc:
+            return None, str(exc)
+
+    @staticmethod
+    def _encoding_names(encodings):
+        names = []
+        for encoding in encodings or []:
+            names.append(ShaderServiceMixin._shader_encoding_name(encoding))
+        return names
 
     def _shader_debug_summary(self, reflection):
         debug_info = getattr(reflection, "debugInfo", None) if reflection is not None else None
@@ -634,6 +767,313 @@ class ShaderServiceMixin(ShaderSupportMixin):
             }
 
         self.ctx.Replay().BlockInvoke(collect)
+        return result
+
+    def get_target_shader_encodings(self, params):
+        if not self.ctx.IsCaptureLoaded():
+            return self._no_capture()
+
+        result = None
+
+        def collect(controller):
+            nonlocal result
+            try:
+                encodings = list(controller.GetTargetShaderEncodings() or [])
+            except Exception as exc:
+                result = {
+                    "ok": False,
+                    "mode": "summary",
+                    "data": None,
+                    "err": {"code": "query_failed", "msg": str(exc)},
+                    "meta": {"cap": "active", "truncated": False},
+                }
+                return
+
+            result = {
+                "ok": True,
+                "mode": "summary",
+                "data": {
+                    "api": str(self.ctx.APIProps().pipelineType),
+                    "encodings": self._encoding_names(encodings),
+                },
+                "err": None,
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        self.ctx.Replay().BlockInvoke(collect)
+        return result
+
+    def apply_shader_edit(self, params):
+        if not self.ctx.IsCaptureLoaded():
+            return self._no_capture()
+
+        eid = params.get("eid")
+        stage_name = params.get("stage")
+        if eid is None or not stage_name:
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "missing_args", "msg": "eid and stage are required"},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        eid = int(eid)
+        stage_name = str(stage_name).lower()
+        stage_enum = self._stage_enum_from_name(stage_name)
+        if stage_enum is None:
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "bad_stage", "msg": "Unsupported stage"},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        source_text, source_error = self._read_shader_source_from_params(params)
+        if source_text is None:
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "missing_source", "msg": source_error},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        source_encoding = self._shader_encoding_from_name(params.get("source_encoding") or "hlsl")
+        if source_encoding is None:
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "bad_encoding", "msg": "Unsupported source_encoding"},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        result = None
+        old_local_replacement = None
+
+        def collect(controller):
+            nonlocal result, old_local_replacement
+            controller.SetFrameEvent(eid, True)
+            pipe = controller.GetPipelineState()
+            shader = pipe.GetShader(stage_enum)
+            shader_str = str(shader)
+            if not shader_str or "Null" in shader_str or shader_str == "ResourceId::0":
+                result = {
+                    "ok": False,
+                    "mode": "summary",
+                    "data": None,
+                    "err": {"code": "no_shader", "msg": "No shader bound for stage"},
+                    "meta": {"cap": "active", "truncated": False},
+                }
+                return
+
+            target_encodings = list(controller.GetTargetShaderEncodings() or [])
+            if int(source_encoding) not in [int(item) for item in target_encodings]:
+                result = {
+                    "ok": False,
+                    "mode": "summary",
+                    "data": {
+                        "api": str(self.ctx.APIProps().pipelineType),
+                        "supported_encodings": self._encoding_names(target_encodings),
+                    },
+                    "err": {
+                        "code": "unsupported_encoding",
+                        "msg": "{} is not a target shader encoding for this capture API".format(
+                            self._shader_encoding_name(source_encoding)
+                        ),
+                    },
+                    "meta": {"cap": "active", "truncated": False},
+                }
+                return
+
+            entry = params.get("entry")
+            if entry is None:
+                entry = params.get("entry_point")
+            if entry is None:
+                entry = pipe.GetShaderEntryPoint(stage_enum)
+
+            refl = pipe.GetShaderReflection(stage_enum)
+            flags = self._compile_flags_for_edit(params, refl)
+            shader_bytes = source_text.encode("utf-8")
+
+            try:
+                new_shader, errors = controller.BuildTargetShader(
+                    str(entry),
+                    source_encoding,
+                    shader_bytes,
+                    flags,
+                    stage_enum,
+                )
+            except Exception as exc:
+                result = {
+                    "ok": False,
+                    "mode": "summary",
+                    "data": None,
+                    "err": {"code": "build_exception", "msg": str(exc)},
+                    "meta": {"cap": "active", "truncated": False},
+                }
+                return
+
+            if self._is_null_rid(new_shader):
+                result = {
+                    "ok": False,
+                    "mode": "summary",
+                    "data": {
+                        "eid": eid,
+                        "stage": stage_name,
+                        "original_shader": shader_str,
+                        "entry": str(entry),
+                        "source_encoding": self._shader_encoding_name(source_encoding),
+                        "errors": str(errors or ""),
+                    },
+                    "err": {"code": "build_failed", "msg": str(errors or "Shader compilation failed")},
+                    "meta": {"cap": "active", "truncated": False},
+                }
+                return
+
+            replacements, replacement_to_original = self._shader_replacement_maps()
+            old_local_replacement = replacements.get(shader_str)
+
+            controller.ReplaceResource(shader, new_shader)
+            controller.SetFrameEvent(eid, True)
+
+            replacements[shader_str] = new_shader
+            replacement_to_original[str(new_shader)] = shader
+            if old_local_replacement is not None:
+                replacement_to_original.pop(str(old_local_replacement), None)
+
+            result = {
+                "ok": True,
+                "mode": "summary",
+                "data": {
+                    "eid": eid,
+                    "stage": stage_name,
+                    "api": str(self.ctx.APIProps().pipelineType),
+                    "shader": {
+                        "sid": shader_str,
+                        "name": self._shader_name(refl, shader_str),
+                        "entry": str(entry),
+                    },
+                    "source_encoding": self._shader_encoding_name(source_encoding),
+                    "replacement_shader": str(new_shader),
+                    "errors": str(errors or ""),
+                },
+                "err": None,
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        self.ctx.Replay().BlockInvoke(collect)
+
+        if result and result.get("ok"):
+            if old_local_replacement is not None:
+                def free_old(controller):
+                    try:
+                        controller.FreeTargetResource(old_local_replacement)
+                    except Exception as exc:
+                        self._warn_swallow("shader.apply_edit.free_old", exc)
+
+                self.ctx.Replay().BlockInvoke(free_old)
+
+        return result
+
+    def revert_shader_edit(self, params):
+        if not self.ctx.IsCaptureLoaded():
+            return self._no_capture()
+
+        eid = params.get("eid")
+        stage_name = params.get("stage")
+        shader_id = params.get("shader_id")
+        if shader_id is None and (eid is None or not stage_name):
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "missing_args", "msg": "shader_id or eid and stage are required"},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        stage_enum = self._stage_enum_from_name(stage_name) if stage_name else None
+        if stage_name and stage_enum is None:
+            return {
+                "ok": False,
+                "mode": "summary",
+                "data": None,
+                "err": {"code": "bad_stage", "msg": "Unsupported stage"},
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        result = None
+        freed_replacement = None
+
+        def collect(controller):
+            nonlocal result, freed_replacement
+            replacements, replacement_to_original = self._shader_replacement_maps()
+            original = None
+            original_key = None
+
+            if shader_id is not None:
+                key = str(shader_id)
+                if key in replacements:
+                    original = replacement_to_original.get(str(replacements[key]))
+                    original_key = key
+            elif eid is not None and stage_enum is not None:
+                controller.SetFrameEvent(int(eid), True)
+                pipe = controller.GetPipelineState()
+                current_shader = pipe.GetShader(stage_enum)
+                current_key = str(current_shader)
+                if current_key in replacements:
+                    original = current_shader
+                    original_key = current_key
+                elif current_key in replacement_to_original:
+                    original = replacement_to_original[current_key]
+                    original_key = str(original)
+
+            if original is None or original_key is None:
+                result = {
+                    "ok": False,
+                    "mode": "summary",
+                    "data": None,
+                    "err": {"code": "replacement_not_found", "msg": "No MCP shader replacement found"},
+                    "meta": {"cap": "active", "truncated": False},
+                }
+                return
+
+            replacement = replacements.pop(original_key, None)
+            if replacement is not None:
+                replacement_to_original.pop(str(replacement), None)
+
+            controller.RemoveReplacement(original)
+            if eid is not None:
+                controller.SetFrameEvent(int(eid), True)
+
+            freed_replacement = replacement
+            result = {
+                "ok": True,
+                "mode": "summary",
+                "data": {
+                    "eid": int(eid) if eid is not None else None,
+                    "stage": str(stage_name).lower() if stage_name else None,
+                    "shader_id": str(original),
+                    "freed_replacement": str(replacement) if replacement is not None else None,
+                },
+                "err": None,
+                "meta": {"cap": "active", "truncated": False},
+            }
+
+        self.ctx.Replay().BlockInvoke(collect)
+
+        if result and result.get("ok"):
+            if freed_replacement is not None:
+                def free_target(controller):
+                    try:
+                        controller.FreeTargetResource(freed_replacement)
+                    except Exception as exc:
+                        self._warn_swallow("shader.revert_edit.free_target", exc)
+
+                self.ctx.Replay().BlockInvoke(free_target)
+
         return result
 
     def export_shader_raw_bytes(self, params):

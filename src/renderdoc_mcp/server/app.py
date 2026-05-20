@@ -97,6 +97,21 @@ LIVE_BRIDGE_TOOLS: tuple[ToolSpec, ...] = (
         "Return a compact shader summary for one stage at one event from the live capture.",
     ),
     ToolSpec(
+        "get_target_shader_encodings",
+        True,
+        "Return shader source encodings accepted for live replacement in the active capture API.",
+    ),
+    ToolSpec(
+        "apply_shader_edit",
+        True,
+        "Compile source and replace the live shader bound at one event/stage for replay validation.",
+    ),
+    ToolSpec(
+        "revert_shader_edit",
+        True,
+        "Remove a shader replacement previously applied through apply_shader_edit.",
+    ),
+    ToolSpec(
         "save_event_output_texture",
         True,
         "Save one live event output render target or depth target to an export file for before/after validation.",

@@ -45,3 +45,10 @@ class RuntimeTests(unittest.TestCase):
         registry = runtime.LiveToolRegistry(client=object())
 
         self.assertIn("save_event_output_texture", registry.handlers)
+
+    def test_live_registry_exposes_shader_edit_tools(self):
+        registry = runtime.LiveToolRegistry(client=object())
+
+        self.assertIn("get_target_shader_encodings", registry.handlers)
+        self.assertIn("apply_shader_edit", registry.handlers)
+        self.assertIn("revert_shader_edit", registry.handlers)
