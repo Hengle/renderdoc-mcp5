@@ -80,10 +80,12 @@ For `reverse-action`, export the inspected action shader stages to HLSL before w
 
 - use the user-provided action working directory when present
 - otherwise use the current report/bundle directory for the action, or `.state/action_reverse/<capture-or-session>/eid_<eid>/`
+- create or reuse `assets/`, `debug_shaders/`, and `review/` under that working directory
 - for draws, export `vs` and `ps` unless a stage is proven irrelevant
 - for dispatches, export `cs`
 - use predictable names such as `eid_<eid>_<stage>_<shader-name-or-sid>.hlsl`
 - keep any annotated copy or notes beside the exported HLSL, for example `eid_<eid>_<stage>.annotated.hlsl` or `eid_<eid>_<stage>.notes.md`
+- keep the final markdown report and human-review file beside the shader artifacts, for example `Action_Restore_Report.md` and `review/needs_human_review.md`
 
 Annotate HLSL by large functional blocks, not line-by-line translation. Also annotate important input resources near declarations or in the notes file with slot, RID/name, format/dimensions when available, actual code role, and semantic status.
 

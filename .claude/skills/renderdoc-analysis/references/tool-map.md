@@ -94,14 +94,22 @@ Add when needed:
 - Ruri HLSL export for the inspected action shader stages into the action working directory
 - `get_shader_disasm` for motif recognition in the decisive stage
 - `inspect_texture_usage` for the few outputs or disputed inputs that matter downstream
+- `read_buffer` when metadata candidates need runtime cbuffer confirmation
+- `apply_shader_edit` / `revert_shader_edit` for 1-3 controlled probes on key unresolved outputs
+- exported RT or texture images, including alpha single-channel views, for semantic confirmation
 
 Good stopping point:
 
 - exported or explicitly failed HLSL artifacts are recorded for the inspected shader stages
+- annotated HLSL or notes exist beside the raw decompile
 - you can list the important `t#`, `u#`, `cb#`, and `vb/ib` inputs
 - you can annotate what important input resources do in code
 - you can explain the main shader code ranges and what each range does
 - you can describe `o#` or UAV outputs with evidence tied to code or downstream consumers
+- packed outputs are described at channel/bit level, not as broad payloads
+- if metadata exists, runtime cbuffer values and metadata candidates are aligned before renaming
+- if metadata does not exist, image evidence plus downstream/producer flow and controlled probes push semantics as far as they can go
+- unresolved items are queued in `review/needs_human_review.md` instead of being hard-named
 - you can separate hard evidence from inferred material or effect role
 
 ## `shader-edit-experiment`

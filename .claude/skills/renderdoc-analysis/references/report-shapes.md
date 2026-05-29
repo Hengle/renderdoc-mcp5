@@ -180,6 +180,66 @@ Acceptance:
 - discuss only the passes relevant to the user question
 - avoid raw packet dumps
 
+## Shader Restoration Shape
+
+Use this structure:
+
+```text
+Action: <eid> <name> (<Draw|Dispatch>)
+Capture: <path or unknown>
+Marker Path: <marker path or unknown>
+Parent Pass: <nearest marker pass name or unknown>
+Root Pass: <outermost pass name or unknown>
+Position: <index within pass or unknown>
+
+Artifacts:
+- raw HLSL: <path>
+- annotated HLSL or notes: <path>
+- report dir: <path>
+
+Geometry:
+- <topology / counts / attributes, or not applicable>
+
+Bindings:
+- <important input resource>
+
+Metadata Candidates:
+- <candidate name and status>
+
+Runtime CBuffer Checks:
+- <runtime value and mapping status>
+
+Code Blocks:
+- <stage lines A-B: meaning>
+
+Outputs:
+- <target and meaning>
+- <for packed outputs: channel/bit layout and evidence level>
+
+Producer / Consumer Chain:
+- <chain fact>
+
+Image Evidence:
+- <image and what it shows>
+
+Probe Evidence:
+- <probe and result>
+
+Human Review:
+- <review item and current hypothesis>
+
+Validation:
+- <compile result or other checks>
+```
+
+Acceptance:
+
+- include raw plus annotated HLSL artifacts
+- include image evidence, not just text inference
+- include channel/bit layouts for packed outputs
+- when metadata is missing, continue with image/downstream/producer/probe evidence instead of downgrading to a broad report
+- unresolved semantics must be queued for human review
+
 ## Material Usage Shape
 
 Use this structure:

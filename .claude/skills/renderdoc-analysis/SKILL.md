@@ -19,6 +19,10 @@ Working boundary:
 
 Task routes: `analyze-pass`, `trace-resource-flow`, `analyze-material-usage`, `reverse-action`, `shader-edit-experiment`, `build-frame-report`, `reverse-render-pipeline`
 
+Route note:
+- `analyze-pass`, `trace-resource-flow`, and `build-frame-report` stay lightweight.
+- `reverse-action` is the strict high-quality shader-restoration path. Do not fall back to a resource-inventory-only report just because metadata is missing.
+
 Read only the references you need:
 - routing: `references/tool-map.md`
 - workflow: `references/workflows.md`
@@ -28,6 +32,7 @@ Read only the references you need:
 - evidence guardrails: `references/evidence-guardrails.md`
 - report format: `references/report-format.md`
 - shader motifs: `references/shader-patterns.md`
+- shader restoration and naming: `references/shader-restoration-workflow.md`
 - shader decompiler install/use: `references/decompiler.md`
 - shader edit experiments: `references/workflows.md`, `references/tool-map.md`, `references/decompiler.md`
 
@@ -41,6 +46,7 @@ Useful scripts:
 - `scripts/scan_pass_visuals.py`
 - `scripts/classify_pass_taxonomy.py`
 - `scripts/analyze_pass.py`
+- `scripts/build_shader_restoration_report.py`
 
 ## analyze-pass
 
@@ -85,7 +91,7 @@ Default path:
 
 ## reverse-action
 
-Use for one draw or dispatch when the goal is to explain shader behavior, resource usage, code segments, and output semantics in detail.
+Use for one draw or dispatch when the goal is to restore shader behavior at high quality: readable HLSL, naming evidence, packed-output semantics, image evidence, and explicit unresolved items.
 
 Default path:
 
@@ -93,9 +99,10 @@ Default path:
 2. Use draw-packet `context` first for marker path, parent pass, root pass, position, and neighbors. Add `get_pass_packet` only when broader pass role or sibling evidence beyond packet context matters.
 3. For draws, `inspect_mesh` is the default, not optional. You need vertex attributes plus vertex/index buffer bindings before explaining the shader. For dispatches, mark geometry as not applicable.
 4. For draws, inspect both `vs` and `ps` unless one stage is proven irrelevant. For dispatches, inspect `cs`.
-5. Create or reuse the action working directory before code reading. If the user supplied a directory, use it. Otherwise use the current report/bundle directory for that action, or `.state/action_reverse/<capture-or-session>/eid_<eid>/`.
+5. Create or reuse the action working directory before code reading. If the user supplied a directory, use it. Otherwise use the current report/bundle directory for that action, or `.state/action_reverse/<capture-or-session>/eid_<eid>/`. Ensure the working directory also contains `assets/`, `debug_shaders/`, and `review/`.
 6. Decompile the inspected action shader stages with Ruri to HLSL and export them into the action working directory before writing the reverse report. For draws, decompile `vs` and `ps` unless one stage is proven irrelevant; for dispatches, decompile `cs`. Name files predictably, for example `eid_<eid>_<stage>_<shader-name-or-sid>.hlsl`. Keep the exported HLSL as the primary artifact. If Ruri is unavailable or decompilation fails, record the reason and continue with `get_shader_disasm`; do not skip this silently.
-7. Build a binding inventory before drawing conclusions:
+7. Read `references/shader-restoration-workflow.md` before renaming variables, assigning RT/channel semantics, or writing the final report. In `reverse-action`, this is not optional.
+8. Build a binding inventory before drawing conclusions:
    - `inspect_shader.bind`
    - `inspect_shader.bindings`
    - `inspect_shader.cbufs`
@@ -103,35 +110,44 @@ Default path:
    - `inspect_shader.sig`
    - draw-packet `io`
    - mesh `vb/ib` data for draw events
-8. Annotate the exported HLSL, or an adjacent `<shader>.notes.md`, before finalizing. Preserve the decompiled code structure and identifiers. Do not rewrite it into a new pseudocode shader, do not construct helper functions, and do not invent variable/function names unless accurate metadata or direct shader definitions provide those names. Use original decompiler names, resource slots, RIDs, or short comments instead. If metadata or shader definitions provide a real symbol name, keep that spelling instead of shortening it, for example `_MultiscatteringLUT` or `_IrradianceVolumeClipmapTextureALod0`. For inferred consumer-side locals, use complete semantic names such as `roughness`, `normal`, `worldPos`, `viewDir`, and `heightFogNoiseBlend`; avoid terse abbreviations such as `rough`, `n`, or `ws` unless they are part of a real source symbol. Prefer `float3`/`float4` vector locals for vector quantities and split into `.x/.y/.z` components only where scalar code requires it. Keep evidence and confidence in comments or notes. The annotation must split code by large functional blocks only; avoid dense line-by-line comments. Add concise comments for:
+9. Annotate the exported HLSL, or an adjacent `<shader>.notes.md`, before finalizing. Preserve the decompiled code structure and identifiers. Do not rewrite it into a new pseudocode shader, do not construct helper functions, and do not invent variable/function names unless accurate metadata or direct shader definitions provide those names. Treat metadata names as candidates until runtime cbuffer values, binding evidence, code use, and producer/consumer flow support the rename. Use original decompiler names, resource slots, RIDs, or short comments when semantics are not confirmed. If metadata or shader definitions provide a real symbol name and the evidence chain supports it, keep that spelling instead of shortening it, for example `_MultiscatteringLUT` or `_IrradianceVolumeClipmapTextureALod0`. For inferred consumer-side locals, use complete semantic names such as `roughness`, `normal`, `worldPos`, `viewDir`, and `heightFogNoiseBlend`; avoid terse abbreviations such as `rough`, `n`, or `ws` unless they are part of a real source symbol. Prefer `float3`/`float4` vector locals for vector quantities and split into `.x/.y/.z` components only where scalar code requires it. Keep evidence and confidence in comments or notes. The annotation must split code by large functional blocks only; avoid dense line-by-line comments. Add concise comments for:
    - declaration / resource setup
    - vertex/input reconstruction or coordinate prep
    - texture loads, sampling, decode, and masks
    - material, lighting, composite, or compute evaluation
    - output packing / final RT or UAV writes
-9. Annotate input resources near their HLSL declarations or in a dedicated resource note. For each important `t#`, `s#`, `cb#`, `u#`, and `vb/ib`, include slot, resource name/RID when available, format/dimensions when available, actual code role, and semantic status (`consumer-only`, `producer-confirmed`, or `ambiguous`).
-10. Use `get_shader_code` first for the decisive stage. It should return source when available and disassembly otherwise.
-11. Use `get_shader_source` or `get_shader_disasm` directly only when you need explicit control over the fallback path, file selection, or disassembly cross-check.
-12. Segment the decisive code by line ranges. At minimum identify:
+10. For packed RT/UAV outputs, preserve exact bit operations and numeric conversions (`round`, `clamp`, `mad`, `uint`, bitfield insert/extract). Name packed values with channel, source, and bit width where known, and report layouts as channel/bit ranges such as `RT2.x high7`, `RT2.x low3`, or `RT2.w low2`.
+11. Annotate input resources near their HLSL declarations or in a dedicated resource note. For each important `t#`, `s#`, `cb#`, `u#`, and `vb/ib`, include slot, resource name/RID when available, format/dimensions when available, actual code role, and semantic status (`consumer-only`, `producer-confirmed`, or `ambiguous`).
+12. Use `get_shader_code` first for the decisive stage. It should return source when available and disassembly otherwise.
+13. Use `get_shader_source` or `get_shader_disasm` directly only when you need explicit control over the fallback path, file selection, or disassembly cross-check.
+14. Segment the decisive code by line ranges. At minimum identify:
    - declaration / resource setup
    - input reconstruction or coordinate prep
    - texture sampling and decode blocks
    - lighting or material evaluation blocks
    - output packing / final writes
-13. Use HLSL block comments and disassembly line ranges explicitly. Report findings as ranges such as `lines 1-40`, `41-96`, not just free-form summaries. If decompiled code has only generated identifiers, refer to original generated names or slots rather than renaming them. If HLSL and disassembly disagree, trust binding/IO facts and disassembly first, and state the mismatch.
-14. Treat resource semantics as unproven until tied to actual code use. Resource name, format, dimensions, producer evidence, and downstream use all matter.
-15. Trace producer evidence for semantic key inputs before assigning a narrow meaning. Key inputs include resources or channels used for branches, masks, alpha/transmittance, depth reconstruction, GBuffer decode, lighting lookup, or final output modulation. Default to at most 3 key inputs and one producer hop unless the user explicitly asks for deeper tracing.
+15. Use HLSL block comments and disassembly line ranges explicitly. Report findings as ranges such as `lines 1-40`, `41-96`, not just free-form summaries. If decompiled code has only generated identifiers, refer to original generated names or slots rather than renaming them. If HLSL and disassembly disagree, trust binding/IO facts and disassembly first, and state the mismatch.
+16. Treat resource semantics as unproven until tied to actual code use. Resource name, format, dimensions, producer evidence, and downstream use all matter.
+17. Trace producer evidence for semantic key inputs before assigning a narrow meaning. Key inputs include resources or channels used for branches, masks, alpha/transmittance, depth reconstruction, GBuffer decode, lighting lookup, or final output modulation. Default to at most 3 key inputs and one producer hop unless the user explicitly asks for deeper tracing.
    - Start with `inspect_texture_usage` for the resource and use `producer`, `last_write`, `first_read_ctx`, and `first_ps_read_ctx` as evidence.
    - If producer identity or channel meaning changes the conclusion, inspect the producer draw/dispatch and the relevant shader stage.
    - For producer shaders, identify which RT/UAV channel is written and what broad input family feeds it, without inventing specific semantic names from the consumer alone.
    - Classify resource meanings as `consumer-only`, `producer-confirmed`, or `ambiguous`. Use broader names when producer evidence is missing or mixed.
-16. Use `inspect_texture_usage` for the few inputs or outputs that change the conclusion. Default priority:
+18. Treat metadata as optional acceleration, not as a gate. If metadata is missing, keep the same restoration workflow and recover semantics in this order:
+   - current RT/texture image evidence
+   - downstream read behavior
+   - producer write behavior
+   - controlled shader-edit probes
+   - unresolved item queued for human review
+19. Use `inspect_texture_usage` for the few inputs or outputs that change the conclusion. Default priority:
    - one main output RT or UAV
    - one disputed or branch-driving input texture
    - one downstream consumer if output channel meaning is uncertain
-17. Use `io.in_tex_meta` and `io.out_*_meta` to judge partial coverage. Do not compare `inspect_shader.bind.srv` directly against `io.in_tex` as if they were the same counting basis.
-18. Export overlay or before/after RT only when visible contribution itself is disputed; do not let overlay work replace shader analysis.
-19. Write the result with `references/report-format.md` and use `references/shader-patterns.md` for motif recognition.
+20. Export image evidence for key inputs and outputs. At minimum include the main output RT; add alpha single-channel views, key channel single-channel views, and flipped DX11 display copies when they materially improve interpretation.
+21. For each key unresolved output meaning, allow 1-3 minimal shader-edit probes. Probe the packed pre-quantized value or branch-driving intermediate first, save baseline and edited artifacts, and always call `revert_shader_edit` before finishing.
+22. Compile the annotated HLSL when the original entry/profile and local toolchain are available. Record pass/fail in the report; do not silently skip failed compilation.
+23. Put any still-unresolved semantics into `review/needs_human_review.md` with linked images, hypothesis text, and the current evidence level.
+24. Write the result with `references/report-format.md` and use `references/shader-patterns.md` for motif recognition. In `reverse-action`, prefer the shader-restoration report shape over the lighter generic action report.
 
 Reverse-action acceptance bar:
 - export inspected shader stages to HLSL in the action working directory, or state why this failed
@@ -146,6 +162,12 @@ Reverse-action acceptance bar:
 - describe `o#` or UAV outputs with channel-level evidence when available
 - keep pass-family guesses secondary to shader/resource facts
 - do not use `BLENDWEIGHTS/BLENDINDICES` as semantic proof beyond mesh-format context
+- for shader restoration, keep the raw decompiled HLSL plus annotated artifact or notes; each semantic rename must cite the supporting metadata/runtime/code/producer-consumer evidence or remain low-level
+- for packed GBuffer/HGBuffer outputs, report channel-level and bit-level layouts instead of broad names such as `payload`
+- when metadata is missing, do not downgrade to a broad inventory report; use image evidence, downstream/producer flow, and shader-edit probes to push semantics as far as they will go
+- include image artifacts for key inputs/outputs and single-channel views where they affect the conclusion
+- include compile validation when the toolchain is available
+- include `review/needs_human_review.md` when any semantics remain unresolved
 
 ## shader-edit-experiment
 
