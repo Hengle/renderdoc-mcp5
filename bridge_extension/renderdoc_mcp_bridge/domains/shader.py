@@ -41,6 +41,44 @@ class ShaderServiceMixin(ShaderSupportMixin):
         except Exception:
             return None
 
+    @classmethod
+    def _safe_source_filename(cls, value):
+        text = cls._safe_text(value)
+        if text is None or isinstance(value, bool):
+            return None
+
+        number = cls._safe_int(value)
+        if number is not None and number < 0 and text == str(number):
+            return None
+
+        return text
+
+    @classmethod
+    def _coerce_source_text(cls, value):
+        if value is None or isinstance(value, bool):
+            return None
+
+        if isinstance(value, (bytes, bytearray)):
+            try:
+                text = bytes(value).decode("utf-8-sig")
+            except Exception:
+                text = bytes(value).decode("utf-8", errors="replace")
+        else:
+            text = str(value)
+
+        if not text:
+            return None
+
+        stripped = text.strip()
+        if stripped in {"False", "True", "None"}:
+            return None
+
+        number = cls._safe_int(stripped)
+        if number is not None and number < 0 and stripped == str(number):
+            return None
+
+        return text
+
     @staticmethod
     def _code_window(lines, offset, max_lines):
         window = lines[offset : offset + max_lines]
@@ -210,7 +248,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
             "status": self._enum_tail(getattr(debug_info, "debugStatus", None)),
             "compiler": self._safe_text(getattr(debug_info, "compiler", None)),
             "encoding": self._enum_tail(getattr(debug_info, "encoding", None)),
-            "base_file": self._safe_text(getattr(debug_info, "editBaseFile", None)),
+            "base_file": self._safe_source_filename(getattr(debug_info, "editBaseFile", None)),
             "file_count": len(files),
             "has_source": any(file_info.get("line_count", 0) > 0 for file_info in files),
         }
@@ -220,9 +258,10 @@ class ShaderServiceMixin(ShaderSupportMixin):
         files = []
         try:
             for idx, source_file in enumerate(getattr(debug_info, "files", []) or []):
-                filename = self._safe_text(getattr(source_file, "filename", None)) or "<source>"
-                contents = getattr(source_file, "contents", None)
-                text = "" if contents is None else str(contents)
+                filename = self._safe_source_filename(getattr(source_file, "filename", None)) or "<source>"
+                text = self._coerce_source_text(getattr(source_file, "contents", None))
+                if text is None:
+                    continue
                 files.append(
                     {
                         "index": idx,
@@ -239,7 +278,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
 
         try:
             source_blob = getattr(debug_info, "sourceDebugInformation", None)
-            source_text = "" if source_blob is None else str(source_blob)
+            source_text = self._coerce_source_text(source_blob) or ""
         except Exception as exc:
             self._warn_swallow("shader.source_debug_information", exc)
             source_text = ""
@@ -248,7 +287,7 @@ class ShaderServiceMixin(ShaderSupportMixin):
             files = [
                 {
                     "index": 0,
-                    "filename": self._safe_text(getattr(debug_info, "editBaseFile", None)) or "<source>",
+                    "filename": self._safe_source_filename(getattr(debug_info, "editBaseFile", None)) or "<source>",
                     "text": source_text,
                     "line_count": len(source_text.splitlines()),
                 }
