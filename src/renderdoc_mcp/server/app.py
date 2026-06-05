@@ -112,6 +112,11 @@ LIVE_BRIDGE_TOOLS: tuple[ToolSpec, ...] = (
         "Remove a shader replacement previously applied through apply_shader_edit.",
     ),
     ToolSpec(
+        "export_shader_raw_bytes",
+        True,
+        "Export the raw shader bytecode bound at one event/stage to a local file.",
+    ),
+    ToolSpec(
         "save_event_output_texture",
         True,
         "Save one live event output render target or depth target to an export file for before/after validation.",

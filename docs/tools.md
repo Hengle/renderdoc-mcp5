@@ -430,6 +430,43 @@ Notes:
 - use `lines` plus `line_start/line_end` when you need code-range references in a reverse-action report
 - `text` remains available for quick scanning or copy/paste into notes
 
+## 10a. `export_shader_raw_bytes`
+
+Purpose:
+
+- export the raw bytecode blob bound at one event/stage
+- preserve DXBC/DXIL bytes for external decompilers or archival evidence
+- return byte count and sha256 instead of dumping binary data through MCP
+
+Input:
+
+```json
+{
+  "eid": 4211,
+  "stage": "ps",
+  "dest": "D:/renderdoc-mcp/.state/action_reverse/eid_4211/eid_4211_ps.dxbc"
+}
+```
+
+Summary output:
+
+```json
+{
+  "eid": 4211,
+  "stage": "ps",
+  "shader": {"name": "BasePassPS", "entry": "main"},
+  "encoding": "DXBC",
+  "dest": "D:/renderdoc-mcp/.state/action_reverse/eid_4211/eid_4211_ps.dxbc",
+  "byte_count": 18432,
+  "sha256": "..."
+}
+```
+
+Notes:
+
+- `dest` is written on the machine running qrenderdoc
+- use `.dxbc` for `encoding=DXBC` and `.dxil` for `encoding=DXIL`
+
 ## 11. `inspect_mesh`
 
 Purpose:

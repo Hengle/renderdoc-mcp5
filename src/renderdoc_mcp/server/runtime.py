@@ -165,6 +165,7 @@ class LiveToolRegistry:
             "get_target_shader_encodings": self._get_target_shader_encodings,
             "apply_shader_edit": self._apply_shader_edit,
             "revert_shader_edit": self._revert_shader_edit,
+            "export_shader_raw_bytes": self._export_shader_raw_bytes,
             "inspect_cbuffer_values": self._inspect_cbuffer_values,
             "read_buffer": self._read_buffer,
             "get_shader_disasm": self._get_shader_disasm,
@@ -293,6 +294,10 @@ class LiveToolRegistry:
     def _revert_shader_edit(self, params: dict[str, Any]) -> Any:
         clean_params, window_id = self._split_window_params(params)
         return self.client.call("revert_shader_edit", clean_params, window_id=window_id)
+
+    def _export_shader_raw_bytes(self, params: dict[str, Any]) -> Any:
+        clean_params, window_id = self._split_window_params(params)
+        return self.client.call("export_shader_raw_bytes", clean_params, window_id=window_id)
 
     def _inspect_cbuffer_values(self, params: dict[str, Any]) -> Any:
         clean_params, window_id = self._split_window_params(params)
@@ -791,6 +796,23 @@ def maybe_create_fastmcp() -> Any | None:
                 "eid": eid,
                 "stage": stage,
                 "shader_id": shader_id,
+                "window_id": window_id,
+            },
+        )
+
+    @app.tool(description=descriptions["export_shader_raw_bytes"])
+    def export_shader_raw_bytes(
+        eid: int,
+        stage: str,
+        dest: str,
+        window_id: str | None = None,
+    ) -> Any:
+        return live.require(
+            "export_shader_raw_bytes",
+            {
+                "eid": eid,
+                "stage": stage,
+                "dest": dest,
                 "window_id": window_id,
             },
         )

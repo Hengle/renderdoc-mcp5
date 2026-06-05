@@ -22,6 +22,15 @@ class _FakeOfflineRegistry:
         raise AssertionError("offline registry should not be used for live-only methods")
 
 
+class _RecordingClient:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, method, params, window_id=None):
+        self.calls.append((method, params, window_id))
+        return {"ok": True}
+
+
 class RuntimeTests(unittest.TestCase):
     def test_run_local_json_returns_structured_error_for_unavailable_live_method(self):
         with patch("renderdoc_mcp.server.runtime.LiveToolRegistry", _FakeLiveRegistry):
@@ -52,3 +61,34 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("get_target_shader_encodings", registry.handlers)
         self.assertIn("apply_shader_edit", registry.handlers)
         self.assertIn("revert_shader_edit", registry.handlers)
+
+    def test_live_registry_exposes_shader_raw_export_tool(self):
+        registry = runtime.LiveToolRegistry(client=object())
+
+        self.assertIn("export_shader_raw_bytes", registry.handlers)
+
+    def test_live_registry_routes_shader_raw_export_tool(self):
+        client = _RecordingClient()
+        registry = runtime.LiveToolRegistry(client=client)
+
+        result = registry.invoke(
+            "export_shader_raw_bytes",
+            {
+                "eid": 8539,
+                "stage": "ps",
+                "dest": "D:/out/eid_8539_ps.dxbc",
+                "window_id": "win-a",
+            },
+        )
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(
+            client.calls,
+            [
+                (
+                    "export_shader_raw_bytes",
+                    {"eid": 8539, "stage": "ps", "dest": "D:/out/eid_8539_ps.dxbc"},
+                    "win-a",
+                )
+            ],
+        )
